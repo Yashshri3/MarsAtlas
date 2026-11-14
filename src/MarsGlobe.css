@@ -1,0 +1,134 @@
+
+.mars-globe-viewport {
+  position: relative;
+  overflow: hidden;
+  background: #08090b;
+  min-height: 520px;
+}
+
+.cesium-mars-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+  background: #08090b;
+}
+
+.cesium-mars-container .cesium-viewer,
+.cesium-mars-container .cesium-widget,
+.cesium-mars-container canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.cesium-mars-container .cesium-viewer-toolbar,
+.cesium-mars-container .cesium-viewer-bottom,
+.cesium-mars-container .cesium-viewer-animationContainer,
+.cesium-mars-container .cesium-viewer-timelineContainer {
+  display: none !important;
+}
+
+.globe-message,
+.globe-error {
+  position: absolute;
+  z-index: 10;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  color: #ff9a65;
+  background: rgba(10, 10, 10, 0.92);
+  border: 1px solid rgba(255, 120, 73, 0.5);
+  text-align: center;
+  font-family: monospace;
+  max-width: 90%;
+}
+
+.globe-message span {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #b9a397;
+}
+
+.loader-orbit {
+  width: 42px;
+  height: 42px;
+  border: 2px solid rgba(255, 120, 73, 0.2);
+  border-top-color: #ff7849;
+  border-radius: 50%;
+  animation: mars-spin 1s linear infinite;
+}
+
+@keyframes mars-spin {
+  to { transform: rotate(360deg); }
+}
+
+.globe-error {
+  color: #ff8c68;
+}
+
+.globe-error p {
+  color: #ddd;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.coordinate-readout {
+  position: absolute;
+  z-index: 5;
+  bottom: 54px;
+  left: 14px;
+  padding: 10px 12px;
+  background: rgba(10, 10, 10, 0.88);
+  border: 1px solid rgba(255, 120, 73, 0.5);
+  color: #ff9a65;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.mars-globe-viewport .map-overlay-top,
+.mars-globe-viewport .map-controls,
+.mars-globe-viewport .map-legend {
+  z-index: 5;
+}
+
+.mars-globe-viewport .map-controls {
+  position: absolute;
+  right: 14px;
+  bottom: 75px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 10, 10, 0.9);
+  border: 1px solid rgba(255, 120, 73, 0.4);
+}
+
+.mars-globe-viewport .map-controls button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  background: transparent;
+  color: #ff9a65;
+  cursor: pointer;
+}
+
+.mars-globe-viewport .map-controls button:hover {
+  background: rgba(255, 120, 73, 0.16);
+}
+
+.mars-globe-viewport .map-legend {
+  pointer-events: none;
+}
+
+@media (max-width: 850px) {
+  .mars-globe-viewport,
+  .cesium-mars-container {
+    min-height: 420px;
+  }
+}
