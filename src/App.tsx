@@ -98,9 +98,8 @@ function App() {
   const [layerLoading, setLayerLoading] = useState(false);
   const [locationPanelOpen, setLocationPanelOpen] = useState(false);
   const [layerNotice, setLayerNotice] = useState("");
-  const [routeStart, setRouteStart] = useState(locations[0].name);
-  const [routeEnd, setRouteEnd] = useState(locations[1].name);
-  const [routeCalculated, setRouteCalculated] = useState(false);
+  const [, setRouteStart] = useState(...);
+  const [, setRouteEnd] = useState(...);  const [routeCalculated, setRouteCalculated] = useState(false);
   const [routePickMode, setRoutePickMode] = useState<"start" | "end" | null>(null);
   const routePickModeRef = useRef<"start" | "end" | null>(null);
   const routeStartPointRef = useRef<{ lat: number; lon: number } | null>(null);
@@ -228,7 +227,7 @@ function App() {
 
     async function loadMarsLocations() {
       try {
-        const response = await fetch("http://127.0.0.1:8000/api/mars/locations", {
+        const response = await fetch("https://marsatlas.onrender.com/api/mars/locations", {
           signal: controller.signal,
         });
 
