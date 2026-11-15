@@ -10,6 +10,7 @@ import {
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import "./index.css";
 import "./MarsGlobe.css";
+import "./MarsLocationPanel.css";
 
 const MARS_ASSET_ID = 3644333;
 
@@ -58,6 +59,22 @@ const locations = [
 
 type Location = typeof locations[number];
 
+type LayerName = "3d" | "optical" | "elevation";
+
+const MARS_LAYERS: Record<
+  Exclude<LayerName, "3d">,
+  { title: string; id: string }
+> = {
+  optical: {
+    title: "Viking Global Optical Mosaic",
+    id: "Mars_Viking_MDIM21_ClrMosaic_global_232m"
+  },
+  elevation: {
+    title: "MOLA Global Color Hillshade",
+    id: "Mars_MGS_MOLA_ClrShade_merge_global_463m"
+  }
+};
+
 function coordinate(value: number, positive: string, negative: string) {
   return `${Math.abs(value).toFixed(2)}° ${value >= 0 ? positive : negative}`;
 }
@@ -65,6 +82,8 @@ function coordinate(value: number, positive: string, negative: string) {
 function App() {
   const globeRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
+  const tilesetRef = useRef<Cesium.Cesium3DTileset | null>(null);
+  const imageryLayerRef = useRef<Cesium.ImageryLayer | null>(null);
 
   const [selected, setSelected] = useState<Location>(locations[0]);
   const [search, setSearch] = useState("");
@@ -73,10 +92,36 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [coordinates, setCoordinates] = useState("");
+  const [activeLayer, setActiveLayer] = useState<LayerName>("3d");
+  const [layerLoading, setLayerLoading] = useState(false);
+  const [locationPanelOpen, setLocationPanelOpen] = useState(false);
+  const [layerNotice, setLayerNotice] = useState("");
+  const [routeStart, setRouteStart] = useState(locations[0].name);
+  const [routeEnd, setRouteEnd] = useState(locations[1].name);
+  const [routeCalculated, setRouteCalculated] = useState(false);
+  const [routePickMode, setRoutePickMode] = useState<"start" | "end" | null>(null);
+  const routePickModeRef = useRef<"start" | "end" | null>(null);
+  const routeStartPointRef = useRef<{ lat: number; lon: number } | null>(null);
+  const [routeStartPoint, setRouteStartPoint] = useState<{ lat: number; lon: number } | null>(null);
+  const [routeEndPoint, setRouteEndPoint] = useState<{ lat: number; lon: number } | null>(null);
+  const routeLineRef = useRef<Cesium.Entity | null>(null);
+  const [assistantQuestion, setAssistantQuestion] = useState("");
+  const [assistantAnswer, setAssistantAnswer] = useState("");
 
   const filtered = locations.filter((item) =>
     item.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  function getDistanceKm(a: Location, b: Location) {
+    const rad = (value: number) => (value * Math.PI) / 180;
+    const dLat = rad(b.lat - a.lat);
+    const dLon = rad(b.lon - a.lon);
+    const h =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) *
+      Math.sin(dLon / 2) ** 2;
+    return 3390 * 2 * Math.asin(Math.sqrt(h));
+  }
 
   function flyToLocation(location: Location) {
     const viewer = viewerRef.current;
@@ -100,7 +145,75 @@ function App() {
 
   function selectLocation(location: Location) {
     setSelected(location);
+    setLocationPanelOpen(true);
+    setLayerNotice("");
     flyToLocation(location);
+  }
+
+  async function changeMarsLayer(layerName: LayerName) {
+    const viewer = viewerRef.current;
+    const tileset = tilesetRef.current;
+    if (!viewer || viewer.isDestroyed() || !tileset) return;
+
+    setLayerLoading(true);
+    setError("");
+    setLayerNotice("");
+
+    try {
+      if (imageryLayerRef.current) {
+        tileset.imageryLayers.remove(imageryLayerRef.current, true);
+        imageryLayerRef.current = null;
+      }
+
+      if (layerName === "3d") {
+        setActiveLayer("3d");
+        viewer.scene.requestRender();
+        return;
+      }
+
+      const dataset = MARS_LAYERS[layerName].id;
+      const providerUrl =
+        layerName === "optical"
+          ? "https://api.nasa.gov/mars-wmts/catalog/Mars_Viking_MDIM21_ClrMosaic_global_232m/1.0.0//default/default028mm/{z}/{y}/{x}.jpg"
+          : `https://trek.nasa.gov/tiles/Mars/EQ/${dataset}/1.0.0/default/default028mm/{z}/{y}/{x}.jpg`;
+
+      const provider = new Cesium.UrlTemplateImageryProvider({
+        url: providerUrl,
+        tilingScheme: new Cesium.GeographicTilingScheme({
+          ellipsoid: Cesium.Ellipsoid.MARS,
+          numberOfLevelZeroTilesX: 2,
+          numberOfLevelZeroTilesY: 1
+        }),
+        tileWidth: 256,
+        tileHeight: 256,
+        minimumLevel: 0,
+        maximumLevel: layerName === "optical" ? 9 : 8
+      });
+
+      const overlay = tileset.imageryLayers.addImageryProvider(provider);
+      overlay.alpha = 1;
+      imageryLayerRef.current = overlay;
+
+      provider.errorEvent.addEventListener((tileError) => {
+        console.error(`NASA Mars tile error for ${dataset}:`, tileError);
+        setLayerNotice(
+          `Some ${MARS_LAYERS[layerName].title} tiles could not be loaded. The 3D base surface remains available.`
+        );
+      });
+
+      setActiveLayer(layerName);
+      viewer.scene.requestRender();
+    } catch (err) {
+      console.error("Mars layer loading failed:", err);
+      setError("Could not initialize this Mars overlay. See the browser console.");
+      if (imageryLayerRef.current) {
+        tileset.imageryLayers.remove(imageryLayerRef.current, true);
+        imageryLayerRef.current = null;
+      }
+      setActiveLayer("3d");
+    } finally {
+      setLayerLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -126,7 +239,7 @@ function App() {
         Cesium.Ellipsoid.default = Cesium.Ellipsoid.MARS;
 
         viewer = new Cesium.Viewer(globeRef.current!, {
-          globe: false,
+          globe: new Cesium.Globe(Cesium.Ellipsoid.MARS),
           baseLayer: false,
           baseLayerPicker: false,
           geocoder: false,
@@ -146,6 +259,7 @@ function App() {
 
         viewer.scene.backgroundColor =
           Cesium.Color.fromCssColorString("#08090b");
+        viewer.scene.globe.show = false;
 
         viewer.scene.screenSpaceCameraController.minimumZoomDistance = 10000;
         viewer.scene.screenSpaceCameraController.maximumZoomDistance = 50000000;
@@ -171,6 +285,7 @@ function App() {
           return;
         }
 
+        tilesetRef.current = tileset;
         viewer.scene.primitives.add(tileset);
 
         // Add exploration locations.
@@ -209,6 +324,137 @@ function App() {
         // Handle clicks on locations and Mars coordinates.
         viewer.screenSpaceEventHandler.setInputAction(
           (movement: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
+            if (routePickModeRef.current) {
+              let pickedPosition: Cesium.Cartesian3 | undefined;
+
+              // First try the visible Mars 3D tiles surface.
+              if (viewer!.scene.pickPositionSupported) {
+                const surfacePosition = viewer!.scene.pickPosition(movement.position);
+                if (Cesium.defined(surfacePosition)) {
+                  pickedPosition = surfacePosition;
+                }
+              }
+
+              // Fallback to the Mars reference ellipsoid.
+              if (!pickedPosition) {
+                const ellipsoidPosition = viewer!.camera.pickEllipsoid(
+                  movement.position,
+                  Cesium.Ellipsoid.MARS
+                );
+                if (Cesium.defined(ellipsoidPosition)) {
+                  pickedPosition = ellipsoidPosition;
+                }
+              }
+
+              if (!pickedPosition) {
+                setCoordinates("Could not select that point. Click directly on the visible Mars surface.");
+                return;
+              }
+
+              const cartographic = Cesium.Cartographic.fromCartesian(
+                pickedPosition,
+                Cesium.Ellipsoid.MARS
+              );
+              const point = {
+                lat: Cesium.Math.toDegrees(cartographic.latitude),
+                lon: Cesium.Math.toDegrees(cartographic.longitude)
+              };
+
+              if (routePickModeRef.current === "start") {
+                routeStartPointRef.current = point;
+                setRouteStartPoint(point);
+                setRouteEndPoint(null);
+                setRouteCalculated(false);
+                if (routeLineRef.current) {
+                  viewer!.entities.remove(routeLineRef.current);
+                  routeLineRef.current = null;
+                }
+                routePickModeRef.current = "end";
+                setRoutePickMode("end");
+                setCoordinates(`ROUTE START: ${coordinate(point.lat, "N", "S")} / ${coordinate(point.lon, "E", "W")}`);
+              } else {
+                const startPoint = routeStartPointRef.current;
+                if (!startPoint) return;
+                setRouteEndPoint(point);
+                // Draw the route above the 3D-tiles surface. Ground clamping is
+                // unreliable here because the Mars globe terrain is hidden.
+                const routeHeight = 12000; // metres above the Mars reference ellipsoid
+                const routePositions = Cesium.Cartesian3.fromDegreesArrayHeights([
+                  startPoint.lon, startPoint.lat, routeHeight,
+                  point.lon, point.lat, routeHeight
+                ], Cesium.Ellipsoid.MARS);
+
+                // Add visible endpoint markers as well as the route line.
+                viewer!.entities.add({
+                  name: "Route start",
+                  position: Cesium.Cartesian3.fromDegrees(
+                    startPoint.lon, startPoint.lat, routeHeight, Cesium.Ellipsoid.MARS
+                  ),
+                  point: {
+                    pixelSize: 14,
+                    color: Cesium.Color.LIME,
+                    outlineColor: Cesium.Color.WHITE,
+                    outlineWidth: 3,
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                  },
+                  label: {
+                    text: "START",
+                    font: "bold 13px sans-serif",
+                    fillColor: Cesium.Color.LIME,
+                    outlineColor: Cesium.Color.BLACK,
+                    outlineWidth: 3,
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    pixelOffset: new Cesium.Cartesian2(0, -24),
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                  }
+                });
+                viewer!.entities.add({
+                  name: "Route destination",
+                  position: Cesium.Cartesian3.fromDegrees(
+                    point.lon, point.lat, routeHeight, Cesium.Ellipsoid.MARS
+                  ),
+                  point: {
+                    pixelSize: 14,
+                    color: Cesium.Color.CYAN,
+                    outlineColor: Cesium.Color.WHITE,
+                    outlineWidth: 3,
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                  },
+                  label: {
+                    text: "DESTINATION",
+                    font: "bold 13px sans-serif",
+                    fillColor: Cesium.Color.CYAN,
+                    outlineColor: Cesium.Color.BLACK,
+                    outlineWidth: 3,
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    pixelOffset: new Cesium.Cartesian2(0, -24),
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                  }
+                });
+
+                routeLineRef.current = viewer!.entities.add({
+                  name: "Planned route preview",
+                  polyline: {
+                    positions: routePositions,
+                    width: 9,
+                    material: new Cesium.PolylineGlowMaterialProperty({
+                      glowPower: 0.25,
+                      color: Cesium.Color.fromCssColorString("#ff3b18")
+                    }),
+                    depthFailMaterial: Cesium.Color.YELLOW,
+                    arcType: Cesium.ArcType.GEODESIC,
+                    clampToGround: false
+                  }
+                });
+                routePickModeRef.current = null;
+                setRoutePickMode(null);
+                setRouteCalculated(true);
+                setCoordinates(`ROUTE END: ${coordinate(point.lat, "N", "S")} / ${coordinate(point.lon, "E", "W")}`);
+                setActiveTab("Route Planner");
+              }
+              return;
+            }
+
             const picked = viewer!.scene.pick(movement.position);
 
             if (Cesium.defined(picked) && picked.id?.properties?.locationName) {
@@ -217,6 +463,8 @@ function App() {
 
               if (location) {
                 setSelected(location);
+                setLocationPanelOpen(true);
+                setLayerNotice("");
                 flyToLocation(location);
                 return;
               }
@@ -280,6 +528,8 @@ function App() {
       }
 
       viewerRef.current = null;
+      tilesetRef.current = null;
+      imageryLayerRef.current = null;
     };
   }, []);
 
@@ -390,7 +640,26 @@ function App() {
           </div>
         </aside>
 
-        <section className="map-section">
+        <section
+          className="map-section"
+          style={{ display: activeTab === "Explore" ? "flex" : "none" }}
+        >
+          {routePickMode && (
+            <div style={{
+              position: "absolute",
+              zIndex: 20,
+              top: "72px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              padding: "12px 18px",
+              background: "#211712",
+              border: "1px solid #ff7849",
+              color: "#f5e8df",
+              fontSize: "12px"
+            }}>
+              {routePickMode === "start" ? "CLICK MARS TO SELECT ROUTE START" : "NOW CLICK MARS TO SELECT DESTINATION"}
+            </div>
+          )}
           <div className="map-topline">
             <div>
               <span className="eyebrow">PLANETARY SURFACE / MARS</span>
@@ -429,6 +698,13 @@ function App() {
               </div>
               <div className="map-chip">NASA / ESA DATA</div>
             </div>
+
+            <button
+              className="location-layer-launch"
+              onClick={() => setLocationPanelOpen(true)}
+            >
+              <Layers size={15} /> EXPLORE {selected.name.toUpperCase()} LAYERS
+            </button>
 
             <div className="map-controls">
               <button
@@ -474,10 +750,10 @@ function App() {
           <div className="map-bottom">
             <div className="layer-control">
               <Layers size={16} />
-              <span>DATASET</span>
-              <b>VIKING + MOLA / HRSC</b>
+              <span>ACTIVE LAYER</span>
+              <b>{activeLayer === "3d" ? "3D MARS GLOBE" : MARS_LAYERS[activeLayer].title}</b>
             </div>
-            <div className="map-note">GLOBAL MARS 3D TILES · CESIUM ION</div>
+            <div className="map-note">NASA MARS TREK WMTS · CESIUM ION</div>
             <button
               className="expand-button"
               onClick={() => setShowPanel(!showPanel)}
@@ -487,7 +763,233 @@ function App() {
           </div>
         </section>
 
-        {showPanel && (
+        {activeTab !== "Explore" && (
+          <section className="map-section" style={{ padding: "28px", overflowY: "auto" }}>
+            <div className="map-topline" style={{ marginBottom: "24px" }}>
+              <div>
+                <span className="eyebrow">MISSION MODULE / MARS</span>
+                <h1>{activeTab} <span>Workspace</span></h1>
+              </div>
+              <button className="expand-button" onClick={() => setActiveTab("Explore")}>
+                BACK TO EXPLORE
+              </button>
+            </div>
+
+            {activeTab === "Terrain" && (
+              <div style={{ display: "grid", gap: "16px", maxWidth: "850px" }}>
+                <div className="intel-box">
+                  <div className="intel-title"><Mountain size={16} /> TERRAIN ANALYSIS</div>
+                  <label style={{ display: "block", margin: "12px 0" }}>
+                    <span className="eyebrow">SELECT LOCATION</span>
+                    <select
+                      value={selected.name}
+                      onChange={(e) => {
+                        const location = locations.find((item) => item.name === e.target.value);
+                        if (location) setSelected(location);
+                      }}
+                      style={{ display: "block", width: "100%", marginTop: "8px", background: "#171313", color: "#f4e7df", padding: "10px", border: "1px solid #594033" }}
+                    >
+                      {locations.map((location) => <option key={location.name} value={location.name}>{location.name}</option>)}
+                    </select>
+                  </label>
+                  <h2>{selected.name}</h2>
+                  <p>Selected region: {selected.region}. Use the layer selector to inspect the available surface views.</p>
+                </div>
+                <div className="data-grid">
+                  <div className="data-cell"><span>LATITUDE</span><b>{coordinate(selected.lat, "N", "S")}</b></div>
+                  <div className="data-cell"><span>LONGITUDE</span><b>{coordinate(selected.lon, "E", "W")}</b></div>
+                  <div className="data-cell"><span>AVAILABLE VIEW</span><b>{activeLayer.toUpperCase()}</b></div>
+                  <div className="data-cell"><span>NUMERICAL ELEVATION</span><b>NOT CONNECTED</b></div>
+                </div>
+                <div className="intel-box">
+                  <div className="intel-title"><Layers size={16} /> TERRAIN DATA STATUS</div>
+                  <p>MOLA elevation imagery can be selected from Explore → Explore Location Layers. Numerical elevation samples are not yet connected, so slope and roughness values are not calculated here.</p>
+                  <button className="expand-button" onClick={() => { setActiveTab("Explore"); setLocationPanelOpen(true); }}>OPEN MAP LAYERS</button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "Hazards" && (
+              <div style={{ display: "grid", gap: "16px", maxWidth: "850px" }}>
+                <div className="intel-box">
+                  <div className="intel-title"><ShieldAlert size={16} /> SURFACE HAZARD REVIEW</div>
+                  <label style={{ display: "block", margin: "12px 0" }}>
+                    <span className="eyebrow">SELECT LOCATION</span>
+                    <select
+                      value={selected.name}
+                      onChange={(e) => {
+                        const location = locations.find((item) => item.name === e.target.value);
+                        if (location) setSelected(location);
+                      }}
+                      style={{ display: "block", width: "100%", marginTop: "8px", background: "#171313", color: "#f4e7df", padding: "10px", border: "1px solid #594033" }}
+                    >
+                      {locations.map((location) => <option key={location.name} value={location.name}>{location.name}</option>)}
+                    </select>
+                  </label>
+                  <h2>{selected.name}</h2>
+                  <p>Hazard analysis is not yet connected to numerical terrain data. No safety score is being invented.</p>
+                </div>
+                <div className="data-grid">
+                  <div className="data-cell"><span>SLOPE RISK</span><b>AWAITING MOLA DATA</b></div>
+                  <div className="data-cell"><span>ROUGHNESS RISK</span><b>AWAITING DATA</b></div>
+                  <div className="data-cell"><span>LOOSE TERRAIN</span><b>AWAITING DATA</b></div>
+                  <div className="data-cell"><span>OVERALL SAFETY</span><b>NOT RATED</b></div>
+                </div>
+                <div className="intel-box">
+                  <div className="intel-title">NEXT REQUIRED INPUT</div>
+                  <p>A georeferenced elevation grid and surface roughness dataset are required before this module can calculate hazard zones.</p>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "Route Planner" && (
+              <div style={{ display: "grid", gap: "16px", maxWidth: "850px" }}>
+                <div className="intel-box">
+                  <div className="intel-title"><Navigation size={16} /> MARS ROUTE PLANNER</div>
+                  <p>Choose two exploration locations. This prototype calculates their straight-line surface distance; hazard-aware pathfinding will require terrain grids.</p>
+                </div>
+                <div className="data-grid">
+                  <div className="data-cell">
+                    <span>START COORDINATES</span>
+                    <b>{routeStartPoint ? `${coordinate(routeStartPoint.lat, "N", "S")} / ${coordinate(routeStartPoint.lon, "E", "W")}` : "NOT SELECTED"}</b>
+                  </div>
+                  <div className="data-cell">
+                    <span>DESTINATION COORDINATES</span>
+                    <b>{routeEndPoint ? `${coordinate(routeEndPoint.lat, "N", "S")} / ${coordinate(routeEndPoint.lon, "E", "W")}` : "NOT SELECTED"}</b>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  <button
+                    className="expand-button"
+                    onClick={() => {
+                      routePickModeRef.current = "start";
+                      setRoutePickMode("start");
+                      routeStartPointRef.current = null;
+                      setRouteStartPoint(null);
+                      setRouteEndPoint(null);
+                      setRouteCalculated(false);
+                      if (routeLineRef.current && viewerRef.current && !viewerRef.current.isDestroyed()) {
+                        viewerRef.current.entities.remove(routeLineRef.current);
+                        routeLineRef.current = null;
+                      }
+                      setActiveTab("Explore");
+                    }}
+                  >
+                    SELECT POINTS ON MARS
+                  </button>
+                  <button
+                    className="expand-button"
+                    onClick={() => {
+                      routePickModeRef.current = null;
+                      setRoutePickMode(null);
+                      routeStartPointRef.current = null;
+                      setRouteStartPoint(null);
+                      setRouteEndPoint(null);
+                      setRouteCalculated(false);
+                      if (routeLineRef.current && viewerRef.current && !viewerRef.current.isDestroyed()) {
+                        viewerRef.current.entities.remove(routeLineRef.current);
+                        routeLineRef.current = null;
+                      }
+                    }}
+                  >
+                    CLEAR ROUTE
+                  </button>
+                </div>
+                {routePickMode && (
+                  <div className="intel-box">
+                    <div className="intel-title">MAP SELECTION ACTIVE</div>
+                    <p>{routePickMode === "start" ? "Click anywhere on Mars to set your START point." : "Start saved. Now click another point on Mars to set your DESTINATION."}</p>
+                  </div>
+                )}
+                {routeCalculated && routeStartPoint && routeEndPoint && (
+                  <div className="intel-box">
+                    <div className="intel-title">ROUTE PREVIEW</div>
+                    <h2>{getDistanceKm(
+                      { ...locations[0], ...routeStartPoint },
+                      { ...locations[0], ...routeEndPoint }
+                    ).toFixed(1)} km</h2>
+                    <p>
+                      Start: {coordinate(routeStartPoint.lat, "N", "S")} / {coordinate(routeStartPoint.lon, "E", "W")}
+                      <br />
+                      Destination: {coordinate(routeEndPoint.lat, "N", "S")} / {coordinate(routeEndPoint.lon, "E", "W")}
+                    </p>
+                    <p>The orange line is a straight-line preview, not yet a slope-avoiding rover route. Numerical MOLA elevation and roughness grids are required before safety-aware pathfinding can be enabled.</p>
+                    <button
+                      className="expand-button"
+                      onClick={() => {
+                        setActiveTab("Explore");
+                        window.setTimeout(() => {
+                          const currentViewer = viewerRef.current;
+                          if (currentViewer && !currentViewer.isDestroyed()) {
+                            currentViewer.camera.flyTo({
+                              destination: Cesium.Cartesian3.fromDegrees(
+                                (routeStartPoint.lon + routeEndPoint.lon) / 2,
+                                (routeStartPoint.lat + routeEndPoint.lat) / 2,
+                                1800000,
+                                Cesium.Ellipsoid.MARS
+                              ),
+                              duration: 1.5
+                            });
+                          }
+                        }, 100);
+                      }}
+                    >
+                      VIEW ROUTE ON MAP
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "AI Assistant" && (
+              <div style={{ display: "grid", gap: "16px", maxWidth: "850px" }}>
+                <div className="intel-box">
+                  <div className="intel-title"><Bot size={16} /> MARS MISSION ASSISTANT</div>
+                  <p>Choose any exploration location or mention its name in your question. This prototype uses the location information built into the app; it is not connected to a live AI service.</p>
+                  <label style={{ display: "block", marginTop: "12px" }}>
+                    <span className="eyebrow">CURRENT LOCATION</span>
+                    <select
+                      value={selected.name}
+                      onChange={(e) => {
+                        const location = locations.find((item) => item.name === e.target.value);
+                        if (location) setSelected(location);
+                      }}
+                      style={{ display: "block", width: "100%", marginTop: "8px", background: "#171313", color: "#f4e7df", padding: "10px", border: "1px solid #594033" }}
+                    >
+                      {locations.map((location) => <option key={location.name} value={location.name}>{location.name}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  <input value={assistantQuestion} onChange={(e) => setAssistantQuestion(e.target.value)} placeholder="Ask about this Mars location..." style={{ flex: "1 1 260px", minWidth: 0, background: "#171313", color: "#f4e7df", padding: "12px", border: "1px solid #594033" }} />
+                  <button
+                    className="expand-button"
+                    onClick={() => {
+                      const query = assistantQuestion.trim().toLowerCase();
+                      if (!query) {
+                        setAssistantAnswer("Enter a question or a Mars location first.");
+                        return;
+                      }
+                      const mentionedLocation = locations.find((location) =>
+                        query.includes(location.name.toLowerCase())
+                      );
+                      const target = mentionedLocation || selected;
+                      if (mentionedLocation) setSelected(mentionedLocation);
+                      setAssistantAnswer(
+                        `${target.name} — ${target.region}. ${target.detail} Coordinates: ${coordinate(target.lat, "N", "S")} / ${coordinate(target.lon, "E", "W")}. This answer uses the app's built-in location information, not live NASA data.`
+                      );
+                    }}
+                  >
+                    ASK
+                  </button>
+                </div>
+                {assistantAnswer && <div className="intel-box"><p>{assistantAnswer}</p></div>}
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeTab === "Explore" && showPanel && (
           <aside className="right-panel">
             <div className="panel-heading">
               <span className="eyebrow">TARGET INTELLIGENCE</span>
@@ -524,7 +1026,7 @@ function App() {
               </div>
               <div className="data-cell">
                 <span>MAP LAYER</span>
-                <b>VIKING / MOLA</b>
+                <b>{activeLayer.toUpperCase()}</b>
               </div>
             </div>
 
@@ -547,6 +1049,50 @@ function App() {
               </div>
               <span className="soon">SOON</span>
             </div>
+          </aside>
+        )}
+
+        {locationPanelOpen && (
+          <aside className="location-layer-drawer">
+            <div className="location-layer-drawer-head">
+              <div>
+                <span className="eyebrow orange">LOCATION DATA</span>
+                <h2>{selected.name}</h2>
+                <p>{selected.region} · {coordinate(selected.lat, "N", "S")} / {coordinate(selected.lon, "E", "W")}</p>
+              </div>
+              <button className="drawer-close" onClick={() => setLocationPanelOpen(false)}>×</button>
+            </div>
+            <div className="drawer-section-title">SCIENTIFIC LAYERS FOR THIS LOCATION</div>
+            <button
+              className={activeLayer === "3d" ? "drawer-layer active" : "drawer-layer"}
+              onClick={() => changeMarsLayer("3d")}
+              disabled={layerLoading}
+            >
+              <span className="drawer-layer-index">01</span>
+              <span><b>3D Mars Base Map</b><small>Cesium Mars global 3D Tiles</small></span>
+              <span className="drawer-check">{activeLayer === "3d" ? "●" : "○"}</span>
+            </button>
+            <button
+              className={activeLayer === "optical" ? "drawer-layer active" : "drawer-layer"}
+              onClick={() => changeMarsLayer("optical")}
+              disabled={layerLoading}
+            >
+              <span className="drawer-layer-index">02</span>
+              <span><b>Optical Imagery</b><small>Viking global colour mosaic</small></span>
+              <span className="drawer-check">{activeLayer === "optical" ? "●" : "○"}</span>
+            </button>
+            <button
+              className={activeLayer === "elevation" ? "drawer-layer active" : "drawer-layer"}
+              onClick={() => changeMarsLayer("elevation")}
+              disabled={layerLoading}
+            >
+              <span className="drawer-layer-index">03</span>
+              <span><b>Elevation / Relief</b><small>MOLA global colour hillshade</small></span>
+              <span className="drawer-check">{activeLayer === "elevation" ? "●" : "○"}</span>
+            </button>
+            {layerLoading && <div className="drawer-status">LOADING DATASET…</div>}
+            {layerNotice && <div className="drawer-notice">{layerNotice}</div>}
+            <div className="drawer-footnote">Choose one view at a time: Cesium 3D base surface, Viking optical imagery, or MOLA elevation / relief.</div>
           </aside>
         )}
       </section>

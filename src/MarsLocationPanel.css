@@ -1,0 +1,19 @@
+/* Location-specific layer selector. Imagery itself is rendered on the Mars 3D surface. */
+.location-layer-launch{position:absolute;z-index:8;left:18px;bottom:58px;display:inline-flex;align-items:center;gap:9px;padding:12px 15px;color:#ff9a70;background:rgba(17,13,12,.94);border:1px solid rgba(255,120,73,.58);font:600 10px/1.2 "Courier New",monospace;letter-spacing:.08em;cursor:pointer}
+.location-layer-launch:hover{background:rgba(65,31,21,.96)}
+.location-layer-drawer{position:absolute;z-index:20;top:18px;right:18px;width:min(360px,calc(100% - 36px));max-height:calc(100% - 36px);overflow:auto;padding:20px;color:#e9d4c8;background:rgba(14,13,13,.97);border:1px solid rgba(255,120,73,.45);box-shadow:0 18px 60px rgba(0,0,0,.55);backdrop-filter:blur(14px)}
+.location-layer-drawer-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding-bottom:17px;border-bottom:1px solid rgba(255,255,255,.12)}
+.location-layer-drawer-head h2{margin:7px 0 5px;color:#fff1e9;font-size:23px}
+.location-layer-drawer-head p{margin:0;color:#b99a8a;font-size:11px;line-height:1.5}
+.drawer-close{width:30px;height:30px;color:#ff956b;background:transparent;border:1px solid rgba(255,120,73,.35);font-size:22px;cursor:pointer}
+.drawer-section-title{margin:18px 0 10px;color:#ff895e;font:600 10px/1.5 "Courier New",monospace;letter-spacing:.1em}
+.drawer-layer{display:grid;grid-template-columns:26px 1fr 16px;align-items:center;gap:10px;width:100%;margin:7px 0;padding:12px 10px;text-align:left;color:#d7c0b3;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.1);cursor:pointer}
+.drawer-layer:hover,.drawer-layer.active{background:rgba(255,120,73,.11);border-color:rgba(255,120,73,.6)}
+.drawer-layer-index{color:#a77a65;font:11px "Courier New",monospace}
+.drawer-layer b{display:block;color:#f5e5dc;font-size:12px;font-weight:600}
+.drawer-layer small{display:block;margin-top:4px;color:#a88e80;font-size:10px}
+.drawer-check{color:#ff895e;text-align:right}
+.drawer-status,.drawer-notice,.drawer-footnote{margin-top:13px;padding:11px;color:#c7a795;background:rgba(255,120,73,.07);border-left:2px solid #ff7849;font-size:10px;line-height:1.55}
+.drawer-status{color:#ff9b70;font-family:"Courier New",monospace}
+.drawer-footnote{padding:0;color:#907c70;background:transparent;border:0}
+@media(max-width:760px){.location-layer-drawer{top:10px;right:10px;width:min(340px,calc(100% - 20px));max-height:calc(100% - 20px)}.location-layer-launch{left:10px;bottom:52px}}
