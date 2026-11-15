@@ -86,6 +86,8 @@ function App() {
   const imageryLayerRef = useRef<Cesium.ImageryLayer | null>(null);
 
   const [selected, setSelected] = useState<Location>(locations[0]);
+  const [marsLocations, setMarsLocations] = useState<Location[]>(locations);
+  const [apiStatus, setApiStatus] = useState("CONNECTING TO BACKEND");
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("Explore");
   const [showPanel, setShowPanel] = useState(true);
@@ -107,8 +109,11 @@ function App() {
   const routeLineRef = useRef<Cesium.Entity | null>(null);
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantAnswer, setAssistantAnswer] = useState("");
+  const [hazardData, setHazardData] = useState<any>(null);
+  const [hazardLoading, setHazardLoading] = useState(false);
+  const [hazardError, setHazardError] = useState("");
 
-  const filtered = locations.filter((item) =>
+  const filtered = marsLocations.filter((item) =>
     item.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -215,6 +220,122 @@ function App() {
       setLayerLoading(false);
     }
   }
+
+  // Load exploration targets from FastAPI. The curated local list remains
+  // available as a fallback if the backend is offline.
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadMarsLocations() {
+      try {
+        const response = await fetch("http://127.0.0.1:8000/api/mars/locations", {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Mars API returned HTTP ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const apiItems = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload.locations)
+            ? payload.locations
+            : [];
+
+        if (apiItems.length === 0) {
+          throw new Error("The Mars API returned no locations.");
+        }
+
+        const normalizedLocations: Location[] = apiItems.map((item: any) => {
+          const fallback = locations.find(
+            (location) =>
+              location.name.toLowerCase() === String(item.name ?? "").toLowerCase()
+          );
+          const lat = Number(item.latitude ?? item.lat);
+          const lon = Number(item.longitude ?? item.lon);
+
+          if (!item.name || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+            throw new Error(`Invalid location data received for ${item.name ?? "unknown location"}.`);
+          }
+
+          return {
+            name: String(item.name),
+            region: String(item.region ?? fallback?.region ?? "Mars"),
+            lat,
+            lon,
+            type: String(item.type ?? fallback?.type ?? "Exploration Region"),
+            detail: String(item.detail ?? item.description ?? fallback?.detail ?? ""),
+          };
+        });
+
+        setMarsLocations(normalizedLocations);
+        setSelected((current) =>
+          normalizedLocations.find((item) => item.name === current.name) ?? normalizedLocations[0]
+        );
+        setRouteStart(normalizedLocations[0].name);
+        setRouteEnd(normalizedLocations[1]?.name ?? normalizedLocations[0].name);
+        setApiStatus("BACKEND CONNECTED");
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        console.error("Could not load Mars locations from FastAPI:", error);
+        setApiStatus("LOCAL FALLBACK ACTIVE");
+      }
+    }
+
+    loadMarsLocations();
+    return () => controller.abort();
+  }, []);
+
+  // Load preliminary hazard findings from the FastAPI backend.
+  useEffect(() => {
+    if (activeTab !== "Hazards") return;
+
+    const controller = new AbortController();
+    const locationIds: Record<string, string> = {
+      "Jezero Crater": "jezero",
+      "Gale Crater": "gale",
+      "Olympus Mons": "olympus-mons",
+      "Valles Marineris": "valles-marineris",
+      "Utopia Planitia": "utopia-planitia",
+    };
+
+    async function loadHazards() {
+      setHazardLoading(true);
+      setHazardError("");
+      setHazardData(null);
+
+      try {
+        const response = await fetch(
+          "http://127.0.0.1:8000/api/hazards/analyze",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ location_id: locationIds[selected.name] }),
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Hazards API returned HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        setHazardData(data);
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        console.error("Hazards API request failed:", error);
+        setHazardError(
+          "Could not connect to the Hazards API. Check that the FastAPI backend is running."
+        );
+      } finally {
+        if (!controller.signal.aborted) setHazardLoading(false);
+      }
+    }
+
+    loadHazards();
+    return () => controller.abort();
+  }, [activeTab, selected.name]);
 
   useEffect(() => {
     if (!globeRef.current) return;
@@ -635,7 +756,7 @@ function App() {
             <Radio size={15} />
             <div>
               <b>DATA LINK</b>
-              <small>CESIUM MARS 3D DATASET</small>
+              <small>{apiStatus} · CESIUM MARS 3D DATASET</small>
             </div>
           </div>
         </aside>
@@ -784,12 +905,12 @@ function App() {
                     <select
                       value={selected.name}
                       onChange={(e) => {
-                        const location = locations.find((item) => item.name === e.target.value);
+                        const location = marsLocations.find((item) => item.name === e.target.value);
                         if (location) setSelected(location);
                       }}
                       style={{ display: "block", width: "100%", marginTop: "8px", background: "#171313", color: "#f4e7df", padding: "10px", border: "1px solid #594033" }}
                     >
-                      {locations.map((location) => <option key={location.name} value={location.name}>{location.name}</option>)}
+                      {marsLocations.map((location) => <option key={location.name} value={location.name}>{location.name}</option>)}
                     </select>
                   </label>
                   <h2>{selected.name}</h2>
@@ -818,27 +939,68 @@ function App() {
                     <select
                       value={selected.name}
                       onChange={(e) => {
-                        const location = locations.find((item) => item.name === e.target.value);
+                        const location = marsLocations.find((item) => item.name === e.target.value);
                         if (location) setSelected(location);
                       }}
                       style={{ display: "block", width: "100%", marginTop: "8px", background: "#171313", color: "#f4e7df", padding: "10px", border: "1px solid #594033" }}
                     >
-                      {locations.map((location) => <option key={location.name} value={location.name}>{location.name}</option>)}
+                      {marsLocations.map((location) => <option key={location.name} value={location.name}>{location.name}</option>)}
                     </select>
                   </label>
                   <h2>{selected.name}</h2>
-                  <p>Hazard analysis is not yet connected to numerical terrain data. No safety score is being invented.</p>
+                  {hazardLoading && <p>CONNECTING TO MARS HAZARD ANALYSIS...</p>}
+                  {hazardError && <p style={{ color: "#ff7849" }}>{hazardError}</p>}
+                  {hazardData && <p>{hazardData.message}</p>}
                 </div>
-                <div className="data-grid">
-                  <div className="data-cell"><span>SLOPE RISK</span><b>AWAITING MOLA DATA</b></div>
-                  <div className="data-cell"><span>ROUGHNESS RISK</span><b>AWAITING DATA</b></div>
-                  <div className="data-cell"><span>LOOSE TERRAIN</span><b>AWAITING DATA</b></div>
-                  <div className="data-cell"><span>OVERALL SAFETY</span><b>NOT RATED</b></div>
-                </div>
-                <div className="intel-box">
-                  <div className="intel-title">NEXT REQUIRED INPUT</div>
-                  <p>A georeferenced elevation grid and surface roughness dataset are required before this module can calculate hazard zones.</p>
-                </div>
+
+                {hazardData && !hazardLoading && (
+                  <>
+                    <div className="data-grid">
+                      <div className="data-cell">
+                        <span>HAZARD FINDINGS</span>
+                        <b>{hazardData.findings?.length ?? 0}</b>
+                      </div>
+                      <div className="data-cell">
+                        <span>SAFETY SCORE</span>
+                        <b>{hazardData.safety_score ?? "NOT RATED"}</b>
+                      </div>
+                      <div className="data-cell">
+                        <span>SCIENTIFIC VALIDATION</span>
+                        <b>{hazardData.scientific_validation ?? "PENDING"}</b>
+                      </div>
+                      <div className="data-cell">
+                        <span>ANALYSIS STATUS</span>
+                        <b>{hazardData.status?.toUpperCase() ?? "UNKNOWN"}</b>
+                      </div>
+                    </div>
+
+                    <div className="intel-box">
+                      <div className="intel-title"><ShieldAlert size={16} /> DETECTED / KNOWN CONSIDERATIONS</div>
+                      {hazardData.findings?.length ? (
+                        hazardData.findings.map((finding: any, index: number) => (
+                          <div
+                            key={index}
+                            style={{ padding: "14px", marginTop: "12px", background: "#171313", border: "1px solid #594033", borderRadius: "6px" }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+                              <b>{finding.category}</b>
+                              <span style={{ color: "#ff7849", fontSize: "12px" }}>{finding.status}</span>
+                            </div>
+                            <p>{finding.description}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <p>No preliminary findings are available for this location.</p>
+                      )}
+                    </div>
+
+                    <div className="intel-box">
+                      <div className="intel-title">SCIENTIFIC DATA LIMITATION</div>
+                      <p>{hazardData.message}</p>
+                      <p>Numerical slope and surface roughness calculations require georeferenced MOLA elevation and terrain data. This preliminary review is not a verified rover safety assessment.</p>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -951,12 +1113,12 @@ function App() {
                     <select
                       value={selected.name}
                       onChange={(e) => {
-                        const location = locations.find((item) => item.name === e.target.value);
+                        const location = marsLocations.find((item) => item.name === e.target.value);
                         if (location) setSelected(location);
                       }}
                       style={{ display: "block", width: "100%", marginTop: "8px", background: "#171313", color: "#f4e7df", padding: "10px", border: "1px solid #594033" }}
                     >
-                      {locations.map((location) => <option key={location.name} value={location.name}>{location.name}</option>)}
+                      {marsLocations.map((location) => <option key={location.name} value={location.name}>{location.name}</option>)}
                     </select>
                   </label>
                 </div>
@@ -964,20 +1126,54 @@ function App() {
                   <input value={assistantQuestion} onChange={(e) => setAssistantQuestion(e.target.value)} placeholder="Ask about this Mars location..." style={{ flex: "1 1 260px", minWidth: 0, background: "#171313", color: "#f4e7df", padding: "12px", border: "1px solid #594033" }} />
                   <button
                     className="expand-button"
-                    onClick={() => {
-                      const query = assistantQuestion.trim().toLowerCase();
-                      if (!query) {
-                        setAssistantAnswer("Enter a question or a Mars location first.");
+                    onClick={async () => {
+                      const message = assistantQuestion.trim();
+                      if (!message) {
+                        setAssistantAnswer("Please enter a question first.");
                         return;
                       }
-                      const mentionedLocation = locations.find((location) =>
-                        query.includes(location.name.toLowerCase())
-                      );
-                      const target = mentionedLocation || selected;
-                      if (mentionedLocation) setSelected(mentionedLocation);
-                      setAssistantAnswer(
-                        `${target.name} — ${target.region}. ${target.detail} Coordinates: ${coordinate(target.lat, "N", "S")} / ${coordinate(target.lon, "E", "W")}. This answer uses the app's built-in location information, not live NASA data.`
-                      );
+
+                      const locationIds: Record<string, string> = {
+                        "Jezero Crater": "jezero",
+                        "Gale Crater": "gale",
+                        "Olympus Mons": "olympus-mons",
+                        "Valles Marineris": "valles-marineris",
+                        "Utopia Planitia": "utopia-planitia"
+                      };
+
+                      try {
+                        setAssistantAnswer("Connecting to Mars mission assistant...");
+
+                        const response = await fetch(
+                          "http://127.0.0.1:8000/api/assistant/chat",
+                          {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                              message,
+                              location_id: locationIds[selected.name] ?? null
+                            })
+                          }
+                        );
+
+                        if (!response.ok) {
+                          throw new Error(`Assistant API returned HTTP ${response.status}`);
+                        }
+
+                        const data = await response.json();
+                        setAssistantAnswer(
+                          typeof data.answer === "string"
+                            ? data.answer
+                            : "The assistant returned an unexpected response."
+                        );
+                      } catch (error) {
+                        console.error("Mars assistant request failed:", error);
+                        setAssistantAnswer(
+                          "Could not connect to the Mars backend. Check that FastAPI is running and CORS allows this frontend address."
+                        );
+                      }
                     }}
                   >
                     ASK
