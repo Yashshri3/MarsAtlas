@@ -98,8 +98,9 @@ function App() {
   const [layerLoading, setLayerLoading] = useState(false);
   const [locationPanelOpen, setLocationPanelOpen] = useState(false);
   const [layerNotice, setLayerNotice] = useState("");
-  const [, setRouteStart] = useState(...);
-  const [, setRouteEnd] = useState(...);  const [routeCalculated, setRouteCalculated] = useState(false);
+  const [, setRouteStart] = useState<string | null>(null);
+  const [, setRouteEnd] = useState<string | null>(null);
+  const [routeCalculated, setRouteCalculated] = useState(false);
   const [routePickMode, setRoutePickMode] = useState<"start" | "end" | null>(null);
   const routePickModeRef = useRef<"start" | "end" | null>(null);
   const routeStartPointRef = useRef<{ lat: number; lon: number } | null>(null);
@@ -306,7 +307,7 @@ function App() {
 
       try {
         const response = await fetch(
-          "http://127.0.0.1:8000/api/hazards/analyze",
+          "https://marsatlas.onrender.com/api/hazards/analyze",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1144,7 +1145,7 @@ function App() {
                         setAssistantAnswer("Connecting to Mars mission assistant...");
 
                         const response = await fetch(
-                          "http://127.0.0.1:8000/api/assistant/chat",
+                          "https://marsatlas.onrender.com/api/assistant/chat",
                           {
                             method: "POST",
                             headers: {
