@@ -1,0 +1,215 @@
+.mars-globe-viewport {
+  position: relative;
+  overflow: hidden;
+  min-height: 520px;
+  background: #08090b;
+  isolation: isolate;
+}
+
+.cesium-mars-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+  background: #08090b;
+}
+
+.cesium-mars-container .cesium-viewer,
+.cesium-mars-container .cesium-widget,
+.cesium-mars-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.cesium-mars-container .cesium-viewer-toolbar,
+.cesium-mars-container .cesium-viewer-bottom,
+.cesium-mars-container .cesium-viewer-animationContainer,
+.cesium-mars-container .cesium-viewer-timelineContainer {
+  display: none !important;
+}
+
+.globe-message,
+.globe-error {
+  position: absolute;
+  z-index: 10;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(560px, 90%);
+  box-sizing: border-box;
+  padding: 24px;
+  color: #ff9a65;
+  background: rgba(10, 10, 10, 0.94);
+  border: 1px solid rgba(255, 120, 73, 0.5);
+  text-align: center;
+  font-family: monospace;
+}
+
+.globe-message span {
+  color: #b9a397;
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+
+.loader-orbit {
+  width: 42px;
+  height: 42px;
+  border: 2px solid rgba(255, 120, 73, 0.2);
+  border-top-color: #ff7849;
+  border-radius: 50%;
+  animation: mars-spin 1s linear infinite;
+}
+
+@keyframes mars-spin {
+  to { transform: rotate(360deg); }
+}
+
+.globe-error { color: #ff8c68; }
+
+.globe-error p {
+  color: #ddd;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.coordinate-readout {
+  position: absolute;
+  z-index: 5;
+  bottom: 54px;
+  left: 14px;
+  padding: 10px 12px;
+  color: #ff9a65;
+  background: rgba(10, 10, 10, 0.9);
+  border: 1px solid rgba(255, 120, 73, 0.5);
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.mars-globe-viewport .map-overlay-top {
+  position: absolute;
+  z-index: 5;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.mars-globe-viewport .map-controls {
+  position: absolute;
+  z-index: 8;
+  right: 14px;
+  bottom: 75px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 10, 10, 0.9);
+  border: 1px solid rgba(255, 120, 73, 0.4);
+}
+
+.mars-globe-viewport .map-controls button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  background: transparent;
+  color: #ff9a65;
+  cursor: pointer;
+}
+
+.mars-globe-viewport .map-controls button:hover {
+  background: rgba(255, 120, 73, 0.16);
+}
+
+.mars-globe-viewport .map-legend {
+  position: absolute;
+  z-index: 5;
+  bottom: 14px;
+  left: 14px;
+  right: 14px;
+  pointer-events: none;
+}
+
+.mars-layer-panel {
+  position: absolute;
+  z-index: 9;
+  top: 65px;
+  left: 14px;
+  width: 220px;
+  padding: 12px;
+  box-sizing: border-box;
+  background: rgba(10, 10, 10, 0.95);
+  border: 1px solid rgba(255, 120, 73, 0.45);
+  font-family: monospace;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+.mars-layer-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-bottom: 10px;
+  margin-bottom: 7px;
+  color: #ff895c;
+  border-bottom: 1px solid rgba(255, 120, 73, 0.25);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+}
+
+.layer-loading {
+  margin-left: auto;
+  color: #e6c0a8;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+}
+
+.mars-layer-panel button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #c5b8b0;
+  text-align: left;
+  font-family: monospace;
+  font-size: 10px;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.mars-layer-panel button span {
+  color: #806c61;
+  font-size: 10px;
+}
+
+.mars-layer-panel button:hover,
+.mars-layer-panel button.layer-active {
+  color: #ff986c;
+  background: rgba(255, 120, 73, 0.12);
+  border-color: rgba(255, 120, 73, 0.35);
+}
+
+.mars-layer-panel button.layer-active span { color: #ff986c; }
+
+@media (max-width: 850px) {
+  .mars-globe-viewport,
+  .cesium-mars-container { min-height: 420px; }
+  .mars-layer-panel {
+    top: 60px;
+    left: 8px;
+    width: 190px;
+  }
+  .mars-layer-panel button {
+    padding: 9px 6px;
+    font-size: 9px;
+  }
+}
